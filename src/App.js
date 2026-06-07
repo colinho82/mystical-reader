@@ -7,7 +7,7 @@ const GOLD="#C9A84C",CREAM="#F5E6C8",PURPLE="#1E0A3C";
 // Get your free key at: console.anthropic.com → API Keys
 // It looks like: sk-ant-api03-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 // ══════════════════════════════════════════════════════════════════
-const ANTHROPIC_API_KEY = "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";
+const ANTHROPIC_API_KEY = "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";
 // ══════════════════════════════════════════════════════════════════
 
 const LIFE_AREAS=[
@@ -934,6 +934,7 @@ export default function App(){
   const [screen,setScreen]=useState("welcome");
   const [session,setSession]=useState(EMPTY);
   const [deckIdx,setDeckIdx]=useState(0);
+  const [dismissBanner,setDismissBanner]=useState(false);
 
   const has=session.question.length>0||Object.keys(session.deckResults).length>0;
   const allDone=DECKS.every(d=>session.deckResults[d.id]);
@@ -984,17 +985,27 @@ export default function App(){
           </div>
         )}
 
-        {/* API Key warning banner */}
-        {ANTHROPIC_API_KEY==="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"&&(
+        {/* API Key warning — only shows if key is missing/placeholder AND not dismissed */}
+        {!dismissBanner&&(ANTHROPIC_API_KEY===""||ANTHROPIC_API_KEY==="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")&&(
           <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:999,
-            background:"rgba(180,80,0,0.97)",borderTop:"2px solid #FF8C42",
-            padding:"12px 16px",maxWidth:480,margin:"0 auto"}}>
-            <div style={{color:"#FFD180",fontSize:12,fontWeight:700,marginBottom:4}}>
-              🔑 API Key Not Set
+            background:"rgba(140,60,0,0.98)",borderTop:"2px solid #FF8C42",
+            padding:"12px 16px",maxWidth:480,margin:"0 auto",
+            display:"flex",gap:12,alignItems:"flex-start"}}>
+            <div style={{flex:1}}>
+              <div style={{color:"#FFD180",fontSize:12,fontWeight:700,marginBottom:4}}>
+                🔑 API Key Not Set
+              </div>
+              <div style={{color:"#FFE0B2",fontSize:11,lineHeight:1.6}}>
+                Open <b>src/App.js</b> on GitHub, find line 10 and paste your key from <b>console.anthropic.com</b>. Use <b>Demo Mode</b> to test until then.
+              </div>
             </div>
-            <div style={{color:"#FFE0B2",fontSize:11,lineHeight:1.6}}>
-              Open <b>src/App.js</b> on GitHub and replace <b style={{color:"#FFD180"}}>"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"</b> with your Anthropic API key from <b>console.anthropic.com</b>. Until then, use <b>Demo Mode</b> to test.
-            </div>
+            <button onClick={()=>setDismissBanner(true)} style={{
+              background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,200,100,0.4)",
+              borderRadius:"50%",width:28,height:28,cursor:"pointer",
+              color:"#FFD180",fontSize:16,display:"flex",alignItems:"center",
+              justifyContent:"center",flexShrink:0,fontFamily:"inherit",marginTop:2}}>
+              ✕
+            </button>
           </div>
         )}
         {screen==="welcome"&&<Welcome onStart={startNew} onResume={resume} has={has}/>}
