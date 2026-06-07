@@ -5,7 +5,7 @@ const GOLD="#C9A84C",CREAM="#F5E6C8",PURPLE="#1E0A3C";
 
 
 
-const ANTHROPIC_API_KEY = "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";
+const ANTHROPIC_API_KEY = "";
 
 // ══════════════════════════════════════════════════════════════════
 
