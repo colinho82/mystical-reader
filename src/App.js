@@ -4,15 +4,6 @@ import { useState, useEffect } from "react";
 const GOLD="#C9A84C",CREAM="#F5E6C8",PURPLE="#1E0A3C";
 
 
-// ══════════════════════════════════════════════════════════════════
-
-// 🔑 YOUR ANTHROPIC API KEY — PASTE IT HERE
-
-// Get your free key at: console.anthropic.com → API Keys
-
-// It looks like: sk-ant-api03-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
-// ══════════════════════════════════════════════════════════════════
 
 const ANTHROPIC_API_KEY = "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";
 
