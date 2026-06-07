@@ -5,7 +5,7 @@ const GOLD="#C9A84C",CREAM="#F5E6C8",PURPLE="#1E0A3C";
 
 
 
-const ANTHROPIC_API_KEY = "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";
+const ANTHROPIC_API_KEY = "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";
 
 // ══════════════════════════════════════════════════════════════════
 
@@ -1640,7 +1640,7 @@ return(
 
 {/* API Key warning — only shows if key is missing/placeholder AND not dismissed */}
 
-{!dismissBanner&&(ANTHROPIC_API_KEY===""||ANTHROPIC_API_KEY==="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")&&(
+{!dismissBanner&&(ANTHROPIC_API_KEY===""||ANTHROPIC_API_KEY==="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")&&(
 
 <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:999,
 
