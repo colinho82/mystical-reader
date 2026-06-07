@@ -7,7 +7,7 @@ const GOLD="#C9A84C",CREAM="#F5E6C8",PURPLE="#1E0A3C";
 // Get your free key at: console.anthropic.com → API Keys
 // It looks like: sk-ant-api03-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 // ══════════════════════════════════════════════════════════════════
-const ANTHROPIC_API_KEY = "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";
+const ANTHROPIC_API_KEY = "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";
 // ══════════════════════════════════════════════════════════════════
 
 const LIFE_AREAS=[
@@ -985,7 +985,7 @@ export default function App(){
         )}
 
         {/* API Key warning banner */}
-        {ANTHROPIC_API_KEY==="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"&&(
+        {ANTHROPIC_API_KEY==="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"&&(
           <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:999,
             background:"rgba(180,80,0,0.97)",borderTop:"2px solid #FF8C42",
             padding:"12px 16px",maxWidth:480,margin:"0 auto"}}>
@@ -993,7 +993,7 @@ export default function App(){
               🔑 API Key Not Set
             </div>
             <div style={{color:"#FFE0B2",fontSize:11,lineHeight:1.6}}>
-              Open <b>src/App.js</b> on GitHub and replace <b style={{color:"#FFD180"}}>"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"</b> with your Anthropic API key from <b>console.anthropic.com</b>. Until then, use <b>Demo Mode</b> to test.
+              Open <b>src/App.js</b> on GitHub and replace <b style={{color:"#FFD180"}}>"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"</b> with your Anthropic API key from <b>console.anthropic.com</b>. Until then, use <b>Demo Mode</b> to test.
             </div>
           </div>
         )}
