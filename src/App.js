@@ -2,6 +2,14 @@ import { useState, useEffect } from "react";
 
 const GOLD="#C9A84C",CREAM="#F5E6C8",PURPLE="#1E0A3C";
 
+// ══════════════════════════════════════════════════════════════════
+// 🔑 YOUR ANTHROPIC API KEY — PASTE IT HERE
+// Get your free key at: console.anthropic.com → API Keys
+// It looks like: sk-ant-api03-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+// ══════════════════════════════════════════════════════════════════
+const ANTHROPIC_API_KEY = "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";
+// ══════════════════════════════════════════════════════════════════
+
 const LIFE_AREAS=[
   {id:"love",emoji:"💕",label:"Love & Relationships",color:"#8B2252",questions:["Will my relationship improve or is it time to let go?","Why do my relationships keep ending the same way?","What is blocking me from receiving love?","Is this relationship growing me or depleting me?","How do I heal from heartbreak and open up again?","Why do I repeat the same painful patterns in love?","Am I holding onto something I should release?","How do I know if this person is right for me?"]},
   {id:"career",emoji:"🌟",label:"Career & Life Purpose",color:"#1A4A1A",questions:["Should I change my job or stay where I am?","Why do I feel so stuck in my career?","What hidden skill or talent am I ignoring?","What is my true life purpose?","Should I start my own business or stay employed?","Am I resisting a change I need to make?","Why don't I feel valued at work?","I fear I'm not good enough for the next level — is this true?"]},
@@ -388,7 +396,12 @@ RULES:
 - Return ONLY raw JSON. Nothing else.`;
 
   const res=await fetch("https://api.anthropic.com/v1/messages",{
-    method:"POST",headers:{"Content-Type":"application/json"},
+    method:"POST",headers:{
+      "Content-Type":"application/json",
+      "x-api-key":ANTHROPIC_API_KEY,
+      "anthropic-version":"2023-06-01",
+      "anthropic-dangerous-direct-browser-access":"true"
+    },
     body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,
       messages:[{role:"user",content:prompt}]})
   });
@@ -832,7 +845,7 @@ Write the professional closing summary narrative (under 300 words):
 
 Flowing paragraphs only. Warm, professional, mystical tone. No bullet points.`;
 
-      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:700,messages:[{role:"user",content:prompt}]})});
+      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:700,messages:[{role:"user",content:prompt}]})});
       const data=await res.json();
       const text=data.content?.map(b=>b.text||"").join("")||fallback();
       setSummary(text);
@@ -971,6 +984,19 @@ export default function App(){
           </div>
         )}
 
+        {/* API Key warning banner */}
+        {ANTHROPIC_API_KEY==="YOUR_API_KEY_HERE"&&(
+          <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:999,
+            background:"rgba(180,80,0,0.97)",borderTop:"2px solid #FF8C42",
+            padding:"12px 16px",maxWidth:480,margin:"0 auto"}}>
+            <div style={{color:"#FFD180",fontSize:12,fontWeight:700,marginBottom:4}}>
+              🔑 API Key Not Set
+            </div>
+            <div style={{color:"#FFE0B2",fontSize:11,lineHeight:1.6}}>
+              Open <b>src/App.js</b> on GitHub and replace <b style={{color:"#FFD180"}}>"YOUR_API_KEY_HERE"</b> with your Anthropic API key from <b>console.anthropic.com</b>. Until then, use <b>Demo Mode</b> to test.
+            </div>
+          </div>
+        )}
         {screen==="welcome"&&<Welcome onStart={startNew} onResume={resume} has={has}/>}
         {screen==="s1"&&<S1 onNext={()=>setScreen("s2")} onSkip={()=>setScreen("s2")}/>}
         {screen==="s2"&&<S2 session={session} onUpdate={updateSession} onNext={()=>{setDeckIdx(0);setScreen("s3");}}/>}
