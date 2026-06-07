@@ -1640,7 +1640,7 @@ return(
 
 {/* API Key warning — only shows if key is missing/placeholder AND not dismissed */}
 
-{!dismissBanner&&(ANTHROPIC_API_KEY===""||ANTHROPIC_API_KEY==="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")&&(
+{!dismissBanner&&(ANTHROPIC_API_KEY===""||ANTHROPIC_API_KEY==="")&&(
 
 <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:999,
 
