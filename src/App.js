@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 // 🔑 PASTE YOUR ANTHROPIC API KEY HERE — only change this one line
 // Get your free key at: console.anthropic.com → API Keys
 // ══════════════════════════════════════════════════════════════════
-const API_KEY = "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";
+const API_KEY = "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";
 // ══════════════════════════════════════════════════════════════════
 
 const GOLD="#C9A84C", CREAM="#F5E6C8", PURPLE="#1E0A3C";
@@ -268,7 +268,7 @@ async function callOracle(deck,session,images,demo=false){
   const area=AREAS.find(a=>a.id===session.lifeArea);
 
   // Validate API key
-  if(!API_KEY||API_KEY==="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"||!API_KEY.startsWith("sk-")){
+  if(!API_KEY||API_KEY==="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"||!API_KEY.startsWith("sk-")){
     throw new Error("NOKEY");
   }
 
@@ -588,14 +588,14 @@ function DeckScreen({session,deckIdx,onUpdate,onNext,onGoTo,onClose}){
 
 // ── WELCOME ────────────────────────────────────────────────────────
 function Welcome({onStart,onResume,has}){
-  const keyMissing=!API_KEY||API_KEY==="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"||!API_KEY.startsWith("sk-");
+  const keyMissing=!API_KEY||API_KEY==="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"||!API_KEY.startsWith("sk-");
   return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh",padding:"24px 20px",textAlign:"center"}}>
       <div style={{animation:"float 3s infinite",fontSize:66,marginBottom:6}}>🔮</div>
       <div style={{fontFamily:"Palatino Linotype,serif",fontSize:10,color:GOLD,letterSpacing:6,textTransform:"uppercase",marginBottom:5,opacity:0.7}}>The Sacred Reading</div>
       <h1 style={{fontFamily:"Palatino Linotype,serif",fontSize:30,color:GOLD,margin:"0 0 5px",lineHeight:1.2,textShadow:"0 0 28px rgba(201,168,76,0.4)"}}>Mystical Card<br/>Reader</h1>
       <Div/>
-      <p style={{color:CREAM,fontSize:13,lineHeight:1.7,maxWidth:300,opacity:0.78,margin:"10px 0 22px"}}>A sacred 5-deck system revealing your current energy, root cause, cosmic influences, action plan and most likely outcome.</p>
+      <p style={{color:CREAM,fontsize:13,lineHeight:1.7,maxWidth:300,opacity:0.78,margin:"10px 0 22px"}}>A sacred 5-deck system revealing your current energy, root cause, cosmic influences, action plan and most likely outcome.</p>
       {keyMissing&&(
         <div style={{background:"rgba(180,80,0,0.2)",border:"1px solid rgba(255,140,0,0.4)",borderRadius:12,padding:"12px 16px",marginBottom:18,maxWidth:320,textAlign:"left"}}>
           <div style={{color:"#FFD180",fontSize:12,fontWeight:700,marginBottom:5}}>🔑 API Key Needed for Live Readings</div>
