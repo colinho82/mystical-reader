@@ -4,7 +4,9 @@ import { useState, useEffect } from "react";
 // 🔑 PASTE YOUR ANTHROPIC API KEY HERE — only change this one line
 // Get your free key at: console.anthropic.com → API Keys
 // ══════════════════════════════════════════════════════════════════
-const API_KEY = process.env.REACT_APP_ANTHROPIC_KEY || "";
+const API_KEY = process.env.REACT_APP_ANTHROPIC_KEY
+             || process.env.ANTHROPIC_KEY
+             || "";
 // ══════════════════════════════════════════════════════════════════
 
 const GOLD="#C9A84C", CREAM="#F5E6C8", PURPLE="#1E0A3C";
