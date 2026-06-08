@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 // 🔑 PASTE YOUR ANTHROPIC API KEY HERE — only change this one line
 // Get your free key at: console.anthropic.com → API Keys
 // ══════════════════════════════════════════════════════════════════
-const API_KEY = "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";
+const API_KEY = process.env.REACT_APP_ANTHROPIC_KEY || "";
 // ══════════════════════════════════════════════════════════════════
 
 const GOLD="#C9A84C", CREAM="#F5E6C8", PURPLE="#1E0A3C";
@@ -268,7 +268,7 @@ async function callOracle(deck,session,images,demo=false){
   const area=AREAS.find(a=>a.id===session.lifeArea);
 
   // Validate API key
-  if(!API_KEY||API_KEY==="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"||!API_KEY.startsWith("sk-")){
+  if(!API_KEY||API_KEY===""||!API_KEY.startsWith("sk-")){
     throw new Error("NOKEY");
   }
 
@@ -588,7 +588,7 @@ function DeckScreen({session,deckIdx,onUpdate,onNext,onGoTo,onClose}){
 
 // ── WELCOME ────────────────────────────────────────────────────────
 function Welcome({onStart,onResume,has}){
-  const keyMissing=!API_KEY||API_KEY==="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"||!API_KEY.startsWith("sk-");
+  const keyMissing=!API_KEY||API_KEY===""||!API_KEY.startsWith("sk-");
   return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh",padding:"24px 20px",textAlign:"center"}}>
       <div style={{animation:"float 3s infinite",fontSize:66,marginBottom:6}}>🔮</div>
