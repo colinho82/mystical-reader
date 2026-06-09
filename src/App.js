@@ -321,25 +321,27 @@ Rules: If image too dark/blurry/unreadable set error:true with errorReason. Retu
     })
   });
 
+  // Get response text regardless of status
+  const resText = await res.text().catch(()=>"");
+  let resData = {};
+  try { resData = JSON.parse(resText); } catch(e) { resData = { error: resText.substring(0,300) }; }
+
   if(!res.ok){
-    const errData=await res.json().catch(()=>({}));
-    const msg=errData?.error||`HTTP ${res.status}`;
-    if(res.status===401||msg.includes("key")) throw new Error("NOKEY");
-    if(res.status===429) throw new Error("RATELIMIT");
-    if(res.status===500&&msg.includes("Missing")) throw new Error("NOKEY");
-    throw new Error(`API_ERROR: ${msg}`);
+    const msg = resData?.error || `HTTP ${res.status}`;
+    throw new Error(`FUNC_ERROR: ${msg}`);
   }
 
-  const data=await res.json();
-  if(data.error) throw new Error(`ORACLE_ERROR: ${data.error}`);
+  if(resData.error){
+    throw new Error(`FUNC_ERROR: ${resData.error}`);
+  }
 
-  const raw=data.result||"{}";
-  const clean=raw.replace(/^```(?:json)?\s*/,"").replace(/\s*```$/,"").trim();
+  const raw = resData.result || "{}";
+  const clean = raw.replace(/^```(?:json)?\s*/,"").replace(/\s*```$/,"").trim();
 
   try{
     return JSON.parse(clean);
   }catch(e){
-    throw new Error("PARSE_ERROR");
+    throw new Error(`PARSE_ERROR: ${clean.substring(0,100)}`);
   }
 }
 
@@ -383,14 +385,14 @@ function DeckScreen({session,deckIdx,onUpdate,onNext,onGoTo,onClose}){
     }catch(e){
       const m=e.message||"";
       let display="";
-      if(m==="NOKEY") display="🔑 API key missing or invalid. Open App.js and paste your key from console.anthropic.com on line 7. Or use Demo Mode below.";
-      else if(m.startsWith("HTTP401")) display="🔑 Invalid API key (401). Check your key at console.anthropic.com — must start with sk-ant- with no extra spaces or characters.";
-      else if(m.startsWith("HTTP429")) display="⏳ Too many requests (429). Wait 30 seconds then try again, or use Demo Mode.";
-      else if(m.startsWith("HTTP400")) display="📋 Bad request (400). Try using Demo Mode, or retake card photos with better lighting and ensure the full card is visible.";
-      else if(m.startsWith("HTTP5")) display="🌐 Anthropic server issue. Wait a moment and try again.";
-      else if(m.startsWith("PARSE")) display="📋 Oracle response unclear. Please try again.";
-      else if(m.includes("fetch")||m.includes("network")||m.includes("Failed")) display="🌐 Network error. Check your internet connection and try again.";
-      else display=`Oracle issue: ${m}. Try again or use Demo Mode.`;
+      if(m.includes("ANTHROPIC_KEY not set")) display="🔑 ANTHROPIC_KEY not set in Netlify. Go to Netlify → Site configuration → Environment variables → add ANTHROPIC_KEY = your key, then redeploy.";
+      else if(m.includes("key format invalid")) display=`🔑 API key format wrong. ${m}`;
+      else if(m.includes("401")||m.includes("invalid_api_key")) display="🔑 Invalid API key. Check ANTHROPIC_KEY in Netlify environment variables — must start with sk-ant-";
+      else if(m.includes("429")) display="⏳ Too many requests. Wait 30 seconds then try again, or use Demo Mode.";
+      else if(m.includes("FUNC_ERROR")) display=`⚠ Function error: ${m.replace("FUNC_ERROR:","").trim()}`;
+      else if(m.includes("PARSE_ERROR")) display=`📋 Response parse error: ${m.replace("PARSE_ERROR:","").trim()} — try Demo Mode.`;
+      else if(m.includes("fetch")||m.includes("network")||m.includes("Failed")) display="🌐 Network error reaching Netlify function. Check internet and try again.";
+      else display=`⚠ ${m}`;
       setErr(display); setPhase("upload");
     }
   }
