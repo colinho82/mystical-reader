@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 
 // ══════════════════════════════════════════════════════════════════
-// 🔑 PASTE YOUR ANTHROPIC API KEY HERE — only change this one line
-// Get your free key at: console.anthropic.com → API Keys
+// 🔑 API KEY IS NOW STORED SECURELY IN A NETLIFY FUNCTION
+// The app calls /.netlify/functions/oracle instead of Anthropic directly.
+// Your API key lives ONLY in Netlify environment variables (server-side).
+// It is NEVER exposed in the browser or JavaScript bundle.
+// See: netlify/functions/oracle.js in your repository
 // ══════════════════════════════════════════════════════════════════
-const API_KEY = process.env.REACT_APP_ANTHROPIC_KEY
-             || process.env.ANTHROPIC_KEY
-             || "";
+const ORACLE_ENDPOINT = "/.netlify/functions/oracle";
 // ══════════════════════════════════════════════════════════════════
 
 const GOLD="#C9A84C", CREAM="#F5E6C8", PURPLE="#1E0A3C";
@@ -269,89 +270,79 @@ function Answer({text,deck}){
 async function callOracle(deck,session,images,demo=false){
   const area=AREAS.find(a=>a.id===session.lifeArea);
 
-  // Validate API key
-  if(!API_KEY||API_KEY===""||!API_KEY.startsWith("sk-")){
-    throw new Error("NOKEY");
-  }
-
-  // Build message content array — add images for vision if real photos uploaded
-  const content=[];
+  // Build image content for vision
+  const cardImages=[];
   if(!demo){
     deck.cards.forEach((c,i)=>{
       const img=images[c.id];
-      if(img&&img.startsWith("data:image")){
-        const match=img.match(/^data:(image\/\w+);base64,(.+)$/);
+      if(img&&img.startsWith("data:")){
+        const match=img.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
         if(match){
-          content.push({type:"image",source:{type:"base64",media_type:match[1],data:match[2]}});
-          content.push({type:"text",text:`(Image above = ${c.label}, role: ${c.role})`});
+          cardImages.push({
+            cardIndex:i,
+            label:c.label,
+            role:c.role,
+            desc:c.desc,
+            mediaType:match[1],
+            data:match[2]
+          });
         }
       }
     });
   }
 
-  // Text prompt
-  const cardDesc=deck.cards.map((c,i)=>{
-    const hasImg=!demo&&images[c.id];
-    return `${c.label} (${c.role}): ${hasImg?"see image above — read actual card name":"no image — invent a fitting mystical card name"}\nPurpose: ${c.desc}`;
+  // Build card descriptions
+  const cardLines=deck.cards.map((c,i)=>{
+    const hasImg=!demo&&cardImages.find(ci=>ci.cardIndex===i);
+    return `${c.label} (${c.role}): ${hasImg?"Image provided — identify exact card name from image":"No image — invent a fitting mystical card name"}\nRole: ${c.desc}`;
   }).join("\n\n");
 
-  content.push({type:"text",text:`You are a professional mystical card reader. Return ONLY valid JSON, no markdown.
+  const prompt=`You are an expert mystical card reader interpreting a ${deck.name} reading.
+Life area: ${area?.label}
+Client question: "${session.question}"
+Deck purpose: ${deck.purpose}
 
-Deck: ${deck.name} | Life area: ${area?.label} | Question: "${session.question}"
-Cards:\n${cardDesc}
+Cards:
+${cardLines}
 
-JSON structure:
-{"cards":[{"cardName":"ACTUAL card name in bold prominent text (e.g. Rose Quartz, The Moon, Saturn, Isis). If image unclear/dark/blurry set error true.","keywords":["word1","word2","word3","word4"],"meaning":"2-3 sentences interpreting this specific card for the question '${session.question}'. Be compassionate, specific, empowering. Reference the card name.","error":false,"errorReason":""}],"suggestedAnswer":"3-4 paragraphs weaving ALL cards into one unified answer for the question. Name each card. Warm, honest, empowering. Only include when ALL cards have error false, else empty string."}
+Return ONLY valid JSON, no markdown fences, no extra text:
+{"cards":[{"cardName":"exact card name from image or invented mystical name","keywords":["word1","word2","word3","word4"],"meaning":"2-3 sentences interpreting this card specifically for the client question. Be compassionate and empowering.","error":false,"errorReason":""}],"suggestedAnswer":"3-4 paragraph narrative weaving all cards together answering the client question directly. Warm and empowering. Only include when all cards are ok."}
 
-Rules: cardName = actual name on physical card (or invented if no image). keywords = 4 evocative words. meaning = specific to their question not generic. Return ONLY raw JSON.`});
+Rules: If image too dark/blurry/unreadable set error:true with errorReason. Return ONLY raw JSON.`;
 
-  const res=await fetch("https://api.anthropic.com/v1/messages",{
+  // Call our secure Netlify function — key never touches the browser
+  const res=await fetch(ORACLE_ENDPOINT,{
     method:"POST",
-    headers:{
-      "Content-Type":"application/json",
-      "x-api-key":API_KEY,
-      "anthropic-version":"2023-06-01",
-      "anthropic-dangerous-direct-browser-access":"true"
-    },
-    body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,messages:[{role:"user",content}]})
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      prompt,
+      cardImages,
+      demo
+    })
   });
 
   if(!res.ok){
-    const e=await res.json().catch(()=>({}));
-    throw new Error(`HTTP${res.status}:${e?.error?.message||res.statusText}`);
+    const errData=await res.json().catch(()=>({}));
+    const msg=errData?.error||`HTTP ${res.status}`;
+    if(res.status===401||msg.includes("key")) throw new Error("NOKEY");
+    if(res.status===429) throw new Error("RATELIMIT");
+    if(res.status===500&&msg.includes("Missing")) throw new Error("NOKEY");
+    throw new Error(`API_ERROR: ${msg}`);
   }
 
   const data=await res.json();
-  if(data.error) throw new Error(`API:${data.error.message}`);
+  if(data.error) throw new Error(`ORACLE_ERROR: ${data.error}`);
 
-  const raw=data.content?.map(b=>b.text||"").join("")||"{}";
-  const clean=raw.replace(/^```(?:json)?\s*/,"").replace(/\s*```\s*$/,"").trim();
-  try{ return JSON.parse(clean); }
-  catch(e){ throw new Error("PARSE:Could not read oracle response. Try again."); }
+  const raw=data.result||"{}";
+  const clean=raw.replace(/^```(?:json)?\s*/,"").replace(/\s*```$/,"").trim();
+
+  try{
+    return JSON.parse(clean);
+  }catch(e){
+    throw new Error("PARSE_ERROR");
+  }
 }
 
-async function callSummary(session){
-  const area=AREAS.find(a=>a.id===session.lifeArea);
-  if(!API_KEY||API_KEY==="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"||!API_KEY.startsWith("sk-")) return null;
-  const parts=DECKS.map(d=>{
-    const cd=session.deckCardData?.[d.id];
-    if(!cd||!cd.cards) return `${d.emoji} ${d.name}: Not completed`;
-    const names=cd.cards.map(c=>c.error?"[unread]":c.cardName).join(", ");
-    return `${d.emoji} ${d.name} (${d.subtitle}) — Cards: ${names}\n${(cd.suggestedAnswer||"").substring(0,200)}`;
-  }).join("\n\n");
-
-  const res=await fetch("https://api.anthropic.com/v1/messages",{
-    method:"POST",
-    headers:{"Content-Type":"application/json","x-api-key":API_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-    body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:700,messages:[{role:"user",content:`Professional mystical card reader closing a 5-deck reading.
-Client: ${area?.label} — "${session.question}"
-Readings: ${parts}
-Write closing summary narrative under 280 words. Start with "Let me bring everything together into one clear narrative for you." Reference card names. Include: (1) they are in control — cards show probability not destiny. (2) complete ONE action before another reading. Warm professional tone. Flowing paragraphs only.`}]})
-  });
-  if(!res.ok) return null;
-  const data=await res.json();
-  return data.content?.map(b=>b.text||"").join("")||null;
-}
 
 // ── SECTION 3: DECK SCREEN ────────────────────────────────────────
 function DeckScreen({session,deckIdx,onUpdate,onNext,onGoTo,onClose}){
@@ -590,14 +581,14 @@ function DeckScreen({session,deckIdx,onUpdate,onNext,onGoTo,onClose}){
 
 // ── WELCOME ────────────────────────────────────────────────────────
 function Welcome({onStart,onResume,has}){
-  const keyMissing=!API_KEY||API_KEY===""||!API_KEY.startsWith("sk-");
+  const keyMissing=false; // Key is server-side in Netlify function
   return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh",padding:"24px 20px",textAlign:"center"}}>
       <div style={{animation:"float 3s infinite",fontSize:66,marginBottom:6}}>🔮</div>
       <div style={{fontFamily:"Palatino Linotype,serif",fontSize:10,color:GOLD,letterSpacing:6,textTransform:"uppercase",marginBottom:5,opacity:0.7}}>The Sacred Reading</div>
       <h1 style={{fontFamily:"Palatino Linotype,serif",fontSize:30,color:GOLD,margin:"0 0 5px",lineHeight:1.2,textShadow:"0 0 28px rgba(201,168,76,0.4)"}}>Mystical Card<br/>Reader</h1>
       <Div/>
-      <p style={{color:CREAM,fontsize:13,lineHeight:1.7,maxWidth:300,opacity:0.78,margin:"10px 0 22px"}}>A sacred 5-deck system revealing your current energy, root cause, cosmic influences, action plan and most likely outcome.</p>
+      <p style={{color:CREAM,fontSize:13,lineHeight:1.7,maxWidth:300,opacity:0.78,margin:"10px 0 22px"}}>A sacred 5-deck system revealing your current energy, root cause, cosmic influences, action plan and most likely outcome.</p>
       {keyMissing&&(
         <div style={{background:"rgba(180,80,0,0.2)",border:"1px solid rgba(255,140,0,0.4)",borderRadius:12,padding:"12px 16px",marginBottom:18,maxWidth:320,textAlign:"left"}}>
           <div style={{color:"#FFD180",fontSize:12,fontWeight:700,marginBottom:5}}>🔑 API Key Needed for Live Readings</div>
