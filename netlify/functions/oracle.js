@@ -1,13 +1,14 @@
 // netlify/functions/oracle.js
-// Uses Node built-in https — no npm packages needed
+// Secure server-side function — API key never reaches the browser
+// SETUP: Add ANTHROPIC_KEY in Netlify → Site configuration → Environment variables
 
 const https = require("https");
 
-function callAnthropic(key, messages) {
+function callAnthropic(key, messages, maxTokens) {
   return new Promise((resolve, reject) => {
     const bodyStr = JSON.stringify({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 2000,
+      max_tokens: maxTokens || 2000,
       messages: messages
     });
 
@@ -26,27 +27,33 @@ function callAnthropic(key, messages) {
     const req = https.request(options, (res) => {
       let raw = "";
       res.on("data", chunk => raw += chunk);
-      res.on("end", () => {
-        resolve({ status: res.statusCode, raw });
-      });
+      res.on("end", () => resolve({ status: res.statusCode, raw }));
     });
-
     req.on("error", err => reject(err));
     req.write(bodyStr);
     req.end();
   });
 }
 
+// Resize base64 image to max ~200KB to avoid Anthropic internal errors
+function trimBase64(data, maxBytes) {
+  const max = maxBytes || 200000;
+  if (data.length <= max) return data;
+  // Truncate to max size — Claude can still read partial JPEG/PNG
+  // Better: just take first maxBytes chars of base64 string
+  // Actually we should just reject oversized and use text-only mode
+  return null; // signal to use text-only
+}
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Content-Type": "application/json"
+};
+
 exports.handler = async (event) => {
 
-  const CORS = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Content-Type": "application/json"
-  };
-
-  // CORS preflight
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 200, headers: CORS, body: "" };
   }
@@ -55,19 +62,15 @@ exports.handler = async (event) => {
     return { statusCode: 405, headers: CORS, body: JSON.stringify({ error: "Method not allowed" }) };
   }
 
-  // Check API key
+  // Validate API key
   const key = (process.env.ANTHROPIC_KEY || "").trim();
   if (!key) {
-    return {
-      statusCode: 500, headers: CORS,
-      body: JSON.stringify({ error: "ANTHROPIC_KEY not set in Netlify environment variables" })
-    };
+    return { statusCode: 500, headers: CORS,
+      body: JSON.stringify({ error: "ANTHROPIC_KEY not set in Netlify environment variables" }) };
   }
   if (!key.startsWith("sk-")) {
-    return {
-      statusCode: 500, headers: CORS,
-      body: JSON.stringify({ error: `API key format invalid — starts with: ${key.substring(0,6)}` })
-    };
+    return { statusCode: 500, headers: CORS,
+      body: JSON.stringify({ error: `API key invalid — starts with: "${key.substring(0,8)}"` }) };
   }
 
   // Parse body
@@ -83,12 +86,27 @@ exports.handler = async (event) => {
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Missing prompt" }) };
   }
 
-  // Build message content
-  const content = [];
+  // Build message — try with images first, fall back to text-only if images too large
+  let useImages = false;
+  const validImages = [];
 
   if (!demo && Array.isArray(cardImages) && cardImages.length > 0) {
     cardImages.forEach(ci => {
       if (ci.data && ci.mediaType) {
+        // Check image size — skip if over 1MB base64 (~750KB actual)
+        if (ci.data.length < 1000000) {
+          validImages.push(ci);
+          useImages = true;
+        }
+      }
+    });
+  }
+
+  // Build content array
+  const buildContent = (withImages) => {
+    const content = [];
+    if (withImages && validImages.length > 0) {
+      validImages.forEach(ci => {
         content.push({
           type: "image",
           source: { type: "base64", media_type: ci.mediaType, data: ci.data }
@@ -97,41 +115,77 @@ exports.handler = async (event) => {
           type: "text",
           text: `Above image is ${ci.label} (${ci.role}): ${ci.desc}`
         });
-      }
-    });
-  }
-
-  content.push({ type: "text", text: prompt });
-
-  // Call Anthropic
-  try {
-    const result = await callAnthropic(key, [{ role: "user", content }]);
-
-    let parsed;
-    try {
-      parsed = JSON.parse(result.raw);
-    } catch (e) {
-      return {
-        statusCode: 500, headers: CORS,
-        body: JSON.stringify({ error: `Anthropic returned non-JSON. Status: ${result.status}. Body: ${result.raw.substring(0, 200)}` })
-      };
+      });
     }
+    content.push({ type: "text", text: prompt });
+    return content;
+  };
 
-    if (result.status !== 200) {
-      const msg = parsed?.error?.message || parsed?.error?.type || `HTTP ${result.status}`;
+  // ATTEMPT 1: With images (if available)
+  // ATTEMPT 2: Text-only fallback (if images cause error)
+  const attempts = useImages
+    ? [buildContent(true), buildContent(false)]
+    : [buildContent(false)];
+
+  let lastError = null;
+
+  for (let i = 0; i < attempts.length; i++) {
+    const isTextOnly = i > 0;
+    try {
+      const result = await callAnthropic(
+        key,
+        [{ role: "user", content: attempts[i] }],
+        2000
+      );
+
+      // Parse response
+      let parsed;
+      try {
+        parsed = JSON.parse(result.raw);
+      } catch (e) {
+        lastError = `Non-JSON response (status ${result.status}): ${result.raw.substring(0, 300)}`;
+        continue;
+      }
+
+      // Success
+      if (result.status === 200) {
+        const text = parsed?.content?.map(b => b.text || "").join("") || "{}";
+        return {
+          statusCode: 200, headers: CORS,
+          body: JSON.stringify({
+            result: text,
+            textOnly: isTextOnly // tell client if we used text-only mode
+          })
+        };
+      }
+
+      // Anthropic error — check if retryable
+      const errMsg = parsed?.error?.message || parsed?.error?.type || `HTTP ${result.status}`;
+      const errType = parsed?.error?.type || "";
+
+      // Internal errors and overloaded — retry text-only
+      if (result.status === 500 || result.status === 529 || errType === "overloaded_error") {
+        lastError = `Anthropic internal error: ${errMsg}`;
+        continue; // try text-only
+      }
+
+      // Non-retryable errors — return immediately
       return {
         statusCode: result.status, headers: CORS,
-        body: JSON.stringify({ error: `Anthropic error: ${msg}` })
+        body: JSON.stringify({ error: `Anthropic: ${errMsg}` })
       };
+
+    } catch (err) {
+      lastError = `Network error: ${err.message}`;
+      continue;
     }
-
-    const text = parsed?.content?.map(b => b.text || "").join("") || "{}";
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ result: text }) };
-
-  } catch (err) {
-    return {
-      statusCode: 500, headers: CORS,
-      body: JSON.stringify({ error: `Network error calling Anthropic: ${err.message}` })
-    };
   }
+
+  // All attempts failed
+  return {
+    statusCode: 500, headers: CORS,
+    body: JSON.stringify({
+      error: `All attempts failed. Last error: ${lastError}. Please try Demo Mode.`
+    })
+  };
 };
