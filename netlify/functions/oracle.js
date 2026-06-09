@@ -1,124 +1,137 @@
-// ══════════════════════════════════════════════════════════════════
-// NETLIFY SERVERLESS FUNCTION — oracle.js
-// This runs on Netlify's servers, NOT in the browser.
-// The API key is NEVER sent to the client — it stays here.
-//
-// SETUP:
-// 1. In Netlify → Site configuration → Environment variables
-//    Add variable:  ANTHROPIC_KEY = sk-ant-api03-yourkey
-//    (No REACT_APP_ prefix — this is server-side only)
-// 2. Deploy — the key is secure and never in your JS bundle
-// ══════════════════════════════════════════════════════════════════
+// netlify/functions/oracle.js
+// Uses Node built-in https — no npm packages needed
 
-exports.handler = async (event) => {
+const https = require("https");
 
-  // Only allow POST requests
-  if(event.httpMethod !== "POST"){
-    return {
-      statusCode: 405,
-      body: JSON.stringify({ error: "Method not allowed" })
-    };
-  }
-
-  // Get API key from server environment — never exposed to browser
-  const key = process.env.ANTHROPIC_KEY;
-  if(!key){
-    return {
-      statusCode: 500,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ error: "Missing API key — add ANTHROPIC_KEY to Netlify environment variables" })
-    };
-  }
-
-  let body;
-  try {
-    body = JSON.parse(event.body || "{}");
-  } catch(e) {
-    return {
-      statusCode: 400,
-      body: JSON.stringify({ error: "Invalid request body" })
-    };
-  }
-
-  const { prompt, cardImages, demo } = body;
-
-  if(!prompt){
-    return {
-      statusCode: 400,
-      body: JSON.stringify({ error: "Missing prompt" })
-    };
-  }
-
-  try {
-    // Build the message content for Claude
-    const userContent = [];
-
-    // Add card images if provided (vision reading)
-    if(!demo && cardImages && cardImages.length > 0){
-      cardImages.forEach(ci => {
-        userContent.push({
-          type: "image",
-          source: {
-            type: "base64",
-            media_type: ci.mediaType,
-            data: ci.data
-          }
-        });
-        userContent.push({
-          type: "text",
-          text: `Above image is ${ci.label} (${ci.role}): ${ci.desc}`
-        });
-      });
-    }
-
-    // Add the text prompt
-    userContent.push({
-      type: "text",
-      text: prompt
+function callAnthropic(key, messages) {
+  return new Promise((resolve, reject) => {
+    const bodyStr = JSON.stringify({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 2000,
+      messages: messages
     });
 
-    // Call Anthropic API securely from the server
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    const options = {
+      hostname: "api.anthropic.com",
+      path: "/v1/messages",
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(bodyStr),
         "x-api-key": key,
         "anthropic-version": "2023-06-01"
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 2000,
-        messages: [{ role: "user", content: userContent }]
-      })
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let raw = "";
+      res.on("data", chunk => raw += chunk);
+      res.on("end", () => {
+        resolve({ status: res.statusCode, raw });
+      });
     });
 
-    if(!response.ok){
-      const errData = await response.json().catch(() => ({}));
-      const errMsg = errData?.error?.message || `HTTP ${response.status}`;
+    req.on("error", err => reject(err));
+    req.write(bodyStr);
+    req.end();
+  });
+}
+
+exports.handler = async (event) => {
+
+  const CORS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type": "application/json"
+  };
+
+  // CORS preflight
+  if (event.httpMethod === "OPTIONS") {
+    return { statusCode: 200, headers: CORS, body: "" };
+  }
+
+  if (event.httpMethod !== "POST") {
+    return { statusCode: 405, headers: CORS, body: JSON.stringify({ error: "Method not allowed" }) };
+  }
+
+  // Check API key
+  const key = (process.env.ANTHROPIC_KEY || "").trim();
+  if (!key) {
+    return {
+      statusCode: 500, headers: CORS,
+      body: JSON.stringify({ error: "ANTHROPIC_KEY not set in Netlify environment variables" })
+    };
+  }
+  if (!key.startsWith("sk-")) {
+    return {
+      statusCode: 500, headers: CORS,
+      body: JSON.stringify({ error: `API key format invalid — starts with: ${key.substring(0,6)}` })
+    };
+  }
+
+  // Parse body
+  let body;
+  try {
+    body = JSON.parse(event.body || "{}");
+  } catch (e) {
+    return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Invalid JSON body" }) };
+  }
+
+  const { prompt, cardImages, demo } = body;
+  if (!prompt) {
+    return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Missing prompt" }) };
+  }
+
+  // Build message content
+  const content = [];
+
+  if (!demo && Array.isArray(cardImages) && cardImages.length > 0) {
+    cardImages.forEach(ci => {
+      if (ci.data && ci.mediaType) {
+        content.push({
+          type: "image",
+          source: { type: "base64", media_type: ci.mediaType, data: ci.data }
+        });
+        content.push({
+          type: "text",
+          text: `Above image is ${ci.label} (${ci.role}): ${ci.desc}`
+        });
+      }
+    });
+  }
+
+  content.push({ type: "text", text: prompt });
+
+  // Call Anthropic
+  try {
+    const result = await callAnthropic(key, [{ role: "user", content }]);
+
+    let parsed;
+    try {
+      parsed = JSON.parse(result.raw);
+    } catch (e) {
       return {
-        statusCode: response.status,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ error: errMsg })
+        statusCode: 500, headers: CORS,
+        body: JSON.stringify({ error: `Anthropic returned non-JSON. Status: ${result.status}. Body: ${result.raw.substring(0, 200)}` })
       };
     }
 
-    const data = await response.json();
-    const result = data.content?.map(b => b.text || "").join("") || "{}";
+    if (result.status !== 200) {
+      const msg = parsed?.error?.message || parsed?.error?.type || `HTTP ${result.status}`;
+      return {
+        statusCode: result.status, headers: CORS,
+        body: JSON.stringify({ error: `Anthropic error: ${msg}` })
+      };
+    }
 
-    return {
-      statusCode: 200,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*"
-      },
-      body: JSON.stringify({ result })
-    };
+    const text = parsed?.content?.map(b => b.text || "").join("") || "{}";
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ result: text }) };
 
-  } catch(err) {
+  } catch (err) {
     return {
-      statusCode: 500,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ error: String(err) })
+      statusCode: 500, headers: CORS,
+      body: JSON.stringify({ error: `Network error calling Anthropic: ${err.message}` })
     };
   }
 };
