@@ -747,9 +747,9 @@ function Section2({session,onUpdate,onNext}) {
   const selected=LIFE_AREAS.filter(a=>areas.includes(a.id));
   const valid=areas.length>0&&q.trim().length>=20&&q.trim().length<=1000;
 
-  function toggle(id){setAreas(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]);setErr("");}
+  function toggle(id){setAreas(p=>p.includes(id)?[]:[id]);setErr("");}
   function go(){
-    if(areas.length===0){setErr("Please select at least one life area.");return;}
+    if(areas.length===0){setErr("Please select a life area.");return;}
     if(q.trim().length<20){setErr(`Please describe your question (${20-q.trim().length} more characters needed).`);return;}
     onUpdate({lifeAreas:areas,question:q.trim()});onNext();
   }
@@ -766,12 +766,17 @@ function Section2({session,onUpdate,onNext}) {
       </div>
 
       <div style={{marginBottom:18}}>
-        <Lbl>✦ Life Area (select all that apply)</Lbl>
+        <Lbl>✦ Life Area</Lbl>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}>
           {LIFE_AREAS.map(a=>{const sel=areas.includes(a.id);return(
-            <button key={a.id} className="abtn" onClick={()=>toggle(a.id)} style={{background:sel?`${a.color}cc`:`${a.color}33`,border:`1.5px solid ${sel?G.gold:`${a.color}66`}`,borderRadius:11,padding:"10px 8px",cursor:"pointer",display:"flex",alignItems:"center",gap:7,transition:"all .22s",boxShadow:sel?`0 3px 14px ${a.color}50`:"none"}}>
+            <button key={a.id} className="abtn" onClick={()=>toggle(a.id)} style={{
+              background:sel?`${a.color}cc`:`${a.color}88`,
+              border:`1.5px solid ${sel?G.gold:`${a.color}cc`}`,
+              borderRadius:11,padding:"10px 8px",cursor:"pointer",
+              display:"flex",alignItems:"center",gap:7,transition:"all .22s",
+              boxShadow:sel?`0 3px 14px ${a.color}66`:`0 2px 8px ${a.color}44`}}>
               <span style={{fontSize:17}}>{a.emoji}</span>
-              <span style={{color:sel?G.gold:G.cream,fontSize:10.5,fontWeight:sel?700:400,textAlign:"left",lineHeight:1.3,flex:1}}>{a.label}</span>
+              <span style={{color:sel?G.gold:G.cream,fontSize:10.5,fontWeight:sel?700:600,textAlign:"left",lineHeight:1.3,flex:1,textShadow:"0 1px 3px rgba(0,0,0,.8)"}}>{a.label}</span>
               {sel&&<span style={{color:G.gold,fontSize:11,flexShrink:0}}>✓</span>}
             </button>
           );})}
@@ -792,7 +797,7 @@ function Section2({session,onUpdate,onNext}) {
 
       {selected.length>0&&(
         <Box style={{marginBottom:18}}>
-          <Lbl>{selected.map(a=>a.emoji).join(" ")} Suggested Questions</Lbl>
+          <Lbl>{selected[0]?.emoji} Suggested Questions — {selected[0]?.label}</Lbl>
           <div style={{display:"flex",flexDirection:"column",gap:5}}>
             {[...new Set(selected.flatMap(a=>a.qs))].slice(0,7).map((qs,i)=>(
               <button key={i} className="qbtn" onClick={()=>{setQ(qs);setErr("");}} style={{background:"rgba(201,168,76,.05)",border:"1px solid rgba(201,168,76,.13)",borderRadius:8,padding:"7px 11px",cursor:"pointer",textAlign:"left",color:G.cream,fontSize:12,lineHeight:1.5,transition:"all .15s"}}>
