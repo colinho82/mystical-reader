@@ -9,6 +9,9 @@
 [functions]
   node_bundler = "esbuild"
 
+[functions."oracle"]
+  timeout = 26
+
 [[headers]]
   for = "/.netlify/functions/*"
   [headers.values]
