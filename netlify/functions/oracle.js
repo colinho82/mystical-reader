@@ -26,7 +26,6 @@ function deepseek(key, messages, maxTokens) {
       hostname: "api.deepseek.com",
       path: "/v1/chat/completions",
       method: "POST",
-      timeout: 8000, // 8 second timeout — stays under Netlify's 10s limit
       headers: {
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(body),
@@ -38,12 +37,6 @@ function deepseek(key, messages, maxTokens) {
       let raw = "";
       res.on("data", c => raw += c);
       res.on("end", () => resolve({ status: res.statusCode, raw }));
-    });
-
-    // Handle timeout
-    req.on("timeout", () => {
-      req.destroy();
-      reject(new Error("TIMEOUT: DeepSeek request timed out after 8 seconds"));
     });
 
     req.on("error", err => reject(err));
@@ -140,11 +133,7 @@ exports.handler = async event => {
 
   } catch (err) {
     // Timeout or network error
-    if (err.message.includes("TIMEOUT")) {
-      return { statusCode: 504, headers: CORS,
-        body: JSON.stringify({ error: "Request timed out. DeepSeek took too long to respond. Please retry — it usually works on the second attempt." }) };
-    }
-    return { statusCode: 500, headers: CORS,
+return { statusCode: 500, headers: CORS,
       body: JSON.stringify({ error: `Network error: ${err.message}. Please check your connection and retry.` }) };
   }
 };
