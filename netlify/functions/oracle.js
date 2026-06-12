@@ -1,124 +1,174 @@
-// ══════════════════════════════════════════════════════════════════
-// NETLIFY SERVERLESS FUNCTION — oracle.js
-// This runs on Netlify's servers, NOT in the browser.
-// The API key is NEVER sent to the client — it stays here.
-//
-// SETUP:
-// 1. In Netlify → Site configuration → Environment variables
-//    Add variable:  ANTHROPIC_KEY = sk-ant-api03-yourkey
-//    (No REACT_APP_ prefix — this is server-side only)
-// 2. Deploy — the key is secure and never in your JS bundle
-// ══════════════════════════════════════════════════════════════════
+// netlify/functions/oracle.js
+// Handles two modes:
+//   1. OCR mode   — reads card name from uploaded image using DeepSeek Vision
+//   2. Oracle mode — generates card interpretations using DeepSeek Chat
+// SETUP: Add DEEPSEEK_KEY in Netlify → Site configuration → Environment variables
+// Get your key at: platform.deepseek.com
 
-exports.handler = async (event) => {
+const https = require("https");
 
-  // Only allow POST requests
-  if(event.httpMethod !== "POST"){
-    return {
-      statusCode: 405,
-      body: JSON.stringify({ error: "Method not allowed" })
-    };
-  }
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Content-Type": "application/json",
+};
 
-  // Get API key from server environment — never exposed to browser
-  const key = process.env.ANTHROPIC_KEY;
-  if(!key){
-    return {
-      statusCode: 500,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ error: "Missing API key — add ANTHROPIC_KEY to Netlify environment variables" })
-    };
-  }
-
-  let body;
-  try {
-    body = JSON.parse(event.body || "{}");
-  } catch(e) {
-    return {
-      statusCode: 400,
-      body: JSON.stringify({ error: "Invalid request body" })
-    };
-  }
-
-  const { prompt, cardImages, demo } = body;
-
-  if(!prompt){
-    return {
-      statusCode: 400,
-      body: JSON.stringify({ error: "Missing prompt" })
-    };
-  }
-
-  try {
-    // Build the message content for Claude
-    const userContent = [];
-
-    // Add card images if provided (vision reading)
-    if(!demo && cardImages && cardImages.length > 0){
-      cardImages.forEach(ci => {
-        userContent.push({
-          type: "image",
-          source: {
-            type: "base64",
-            media_type: ci.mediaType,
-            data: ci.data
-          }
-        });
-        userContent.push({
-          type: "text",
-          text: `Above image is ${ci.label} (${ci.role}): ${ci.desc}`
-        });
-      });
-    }
-
-    // Add the text prompt
-    userContent.push({
-      type: "text",
-      text: prompt
-    });
-
-    // Call Anthropic API securely from the server
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+function deepseekPost(key, body) {
+  return new Promise((resolve, reject) => {
+    const bodyStr = JSON.stringify(body);
+    const options = {
+      hostname: "api.deepseek.com",
+      path: "/v1/chat/completions",
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01"
+        "Content-Length": Buffer.byteLength(bodyStr),
+        "Authorization": `Bearer ${key}`,
       },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 2000,
-        messages: [{ role: "user", content: userContent }]
-      })
+    };
+    const req = https.request(options, (res) => {
+      let raw = "";
+      res.on("data", chunk => raw += chunk);
+      res.on("end", () => resolve({ status: res.statusCode, raw }));
     });
+    req.on("error", reject);
+    req.write(bodyStr);
+    req.end();
+  });
+}
 
-    if(!response.ok){
-      const errData = await response.json().catch(() => ({}));
-      const errMsg = errData?.error?.message || `HTTP ${response.status}`;
-      return {
-        statusCode: response.status,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ error: errMsg })
-      };
+exports.handler = async (event) => {
+  if (event.httpMethod === "OPTIONS") {
+    return { statusCode: 200, headers: CORS, body: "" };
+  }
+  if (event.httpMethod !== "POST") {
+    return { statusCode: 405, headers: CORS, body: JSON.stringify({ error: "Method not allowed" }) };
+  }
+
+  const key = (process.env.DEEPSEEK_KEY || "").trim();
+  if (!key) {
+    return { statusCode: 500, headers: CORS,
+      body: JSON.stringify({ error: "DEEPSEEK_KEY not set in Netlify environment variables. Get your key at platform.deepseek.com" }) };
+  }
+  if (!key.startsWith("sk-")) {
+    return { statusCode: 500, headers: CORS,
+      body: JSON.stringify({ error: `DeepSeek key format invalid. Starts with: "${key.substring(0,8)}"` }) };
+  }
+
+  let body;
+  try { body = JSON.parse(event.body || "{}"); }
+  catch (_) { return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Invalid JSON body" }) }; }
+
+  // ── MODE 1: OCR — read card name from image ──────────────────
+  if (body.ocr === true) {
+    const { imageMediaType, imageData, cardRole, cardLabel } = body;
+    if (!imageData) {
+      return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Missing imageData" }) };
     }
 
-    const data = await response.json();
-    const result = data.content?.map(b => b.text || "").join("") || "{}";
+    // Check image size (skip OCR if over 1MB base64)
+    if (imageData.length > 1000000) {
+      return { statusCode: 200, headers: CORS,
+        body: JSON.stringify({ cardName: "", confidence: 0,
+          warning: "Image too large for auto-recognition. Please type the card name manually." }) };
+    }
 
-    return {
-      statusCode: 200,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*"
-      },
-      body: JSON.stringify({ result })
-    };
+    const ocrPrompt = `You are a mystical card reading assistant. Look at this card image carefully.
 
-  } catch(err) {
-    return {
-      statusCode: 500,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ error: String(err) })
-    };
+Your task: Identify the NAME of the card as printed on it.
+
+Card position: ${cardLabel} (${cardRole})
+
+Instructions:
+1. Look for text on the card — usually at the top or bottom
+2. Extract the card name exactly as printed
+3. Return ONLY raw JSON, no markdown:
+
+{"cardName":"the exact card name you can read","confidence":85}
+
+If you cannot read the card name clearly, set confidence below 80 and cardName to your best guess.
+If completely unreadable, set cardName to "" and confidence to 0.`;
+
+    try {
+      const result = await deepseekPost(key, {
+        model: "deepseek-chat",
+        max_tokens: 100,
+        temperature: 0.1,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "image_url", image_url: { url: `data:${imageMediaType};base64,${imageData}` } },
+              { type: "text", text: ocrPrompt }
+            ]
+          }
+        ]
+      });
+
+      let parsed;
+      try { parsed = JSON.parse(result.raw); } catch (_) {
+        return { statusCode: 200, headers: CORS, body: JSON.stringify({ cardName: "", confidence: 0 }) };
+      }
+
+      if (result.status !== 200) {
+        // OCR failed — return empty gracefully, don't block user
+        return { statusCode: 200, headers: CORS, body: JSON.stringify({ cardName: "", confidence: 0 }) };
+      }
+
+      const text = parsed?.choices?.[0]?.message?.content || "{}";
+      const clean = text.replace(/^```(?:json)?\s*/,"").replace(/\s*```$/,"").trim();
+      let ocrResult;
+      try { ocrResult = JSON.parse(clean); } catch (_) { ocrResult = { cardName: "", confidence: 0 }; }
+
+      return { statusCode: 200, headers: CORS, body: JSON.stringify(ocrResult) };
+    } catch (err) {
+      // OCR errors should not block the user — return empty gracefully
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ cardName: "", confidence: 0 }) };
+    }
+  }
+
+  // ── MODE 2: ORACLE — generate card interpretations ────────────
+  const { prompt } = body;
+  if (!prompt) {
+    return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Missing prompt field" }) };
+  }
+
+  try {
+    const result = await deepseekPost(key, {
+      model: "deepseek-chat",
+      max_tokens: 2000,
+      temperature: 0.7,
+      messages: [
+        {
+          role: "system",
+          content: "You are an expert mystical card reader providing professional, personalised readings. Always respond with valid raw JSON only — no markdown fences, no preamble, no text after the JSON."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ]
+    });
+
+    let parsed;
+    try { parsed = JSON.parse(result.raw); }
+    catch (_) {
+      return { statusCode: 500, headers: CORS,
+        body: JSON.stringify({ error: `DeepSeek returned invalid JSON. Status: ${result.status}` }) };
+    }
+
+    if (result.status !== 200) {
+      const msg = parsed?.error?.message || parsed?.error?.code || `HTTP ${result.status}`;
+      return { statusCode: result.status, headers: CORS,
+        body: JSON.stringify({ error: `DeepSeek API error: ${msg}` }) };
+    }
+
+    const text = parsed?.choices?.[0]?.message?.content || "{}";
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ result: text }) };
+
+  } catch (err) {
+    return { statusCode: 500, headers: CORS,
+      body: JSON.stringify({ error: `Network error calling DeepSeek: ${err.message}` }) };
   }
 };
