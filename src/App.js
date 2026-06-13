@@ -819,11 +819,14 @@ function Section2({session,onUpdate,onNext}) {
 // SECTION 4 — FINAL READING SUMMARY
 // ══════════════════════════════════════════════════════════════
 function Section4({session,onNewSession}) {
-  const [loading,setLoading]=useState(false);
-  const [summary,setSummary]=useState(session.summary||"");
-  const [exported,setExported]=useState(false);
+  const [loading,    setLoading]    = useState(false);
+  const [summary,    setSummary]    = useState(session.summary||"");
+  const [directAns,  setDirectAns]  = useState("");
+  const [loadingAns, setLoadingAns] = useState(false);
+  const [exported,   setExported]   = useState(false);
 
-  useEffect(()=>{if(!summary)genSummary();},[]);
+  useEffect(()=>{ if(!summary) genSummary(); },[]);
+  useEffect(()=>{ if(summary && !directAns) genDirectAnswer(); },[summary]);
 
   async function genSummary(){
     setLoading(true);
@@ -863,6 +866,51 @@ This must read as ONE coherent professional consultation — not five separate s
     setLoading(false);
   }
 
+  async function genDirectAnswer(){
+    setLoadingAns(true);
+    try{
+      const areaLabels=(session.lifeAreas||[]).map(id=>LIFE_AREAS.find(a=>a.id===id)?.label||id).join(", ");
+      const allCards=DECKS.map(d=>{
+        const ds=session.ds?.[d.id];
+        if(!ds?.interpretations?.length) return "";
+        const names=ds.interpretations.filter(c=>!c.error).map(c=>c.cardName).join(", ");
+        return `${d.emoji} ${d.name}: ${names}`;
+      }).filter(Boolean).join("\n");
+
+      const prompt = [
+        "You are a direct and experienced mystical card reader.",
+        "",
+        "Client Question: " + session.question,
+        "Life Area: " + areaLabels,
+        "",
+        "Cards drawn across all 5 decks:",
+        allCards,
+        "",
+        "Based on ALL the cards drawn, give a DIRECT, CLEAR and HONEST answer to the client question.",
+        "",
+        "Rules:",
+        "1. Answer the question directly - yes, no, or a clear direction in your first sentence.",
+        "2. Be specific and practical, not vague or mystical.",
+        "3. Give 2-3 sentences of supporting reasoning referencing the actual card names.",
+        "4. End with exactly ONE clear practical action the client should take.",
+        "5. Maximum 5 sentences total.",
+        "6. Write like a trusted friend giving honest direct advice.",
+        "7. No flowery language, no hedging, no disclaimers.",
+        "",
+        "Return ONLY plain text. No JSON, no markdown, no bullet points.",
+      ].join("\n");
+
+            const res=await fetch(ORACLE_ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt})});
+      const txt=await res.text().catch(()=>"");
+      let data={};try{data=JSON.parse(txt);}catch(_){data={error:txt};}
+      if(!res.ok||data.error) throw new Error("failed");
+      setDirectAns(data.result||"");
+    }catch(_){
+      setDirectAns("The cards collectively point toward the answer hidden within your own intuition. Trust what you already know.");
+    }
+    setLoadingAns(false);
+  }
+
   function fallback(){
     return `Let me bring everything together into one complete reading for you.\n\nYour Crystal Reading revealed the current emotional truth you are carrying beneath the surface of your situation. The Egyptian Oracle then uncovered the deeper spiritual root cause — the soul lesson being offered to you at this time. Your Astrology Reading illuminated the cosmic forces and timing actively shaping your experience, while the Magic Oracle translated all of this wisdom into specific, practical action steps.\n\nFinally, the Mystical Tarot mapped the most probable path ahead, showing you where your journey leads if you choose to act on the guidance received today.\n\nRemember: you retain complete free will. These cards reflect the current energetic landscape and most probable trajectory — not a fixed or unchangeable destiny. Every action you take has the power to shape your outcome.\n\nThank you for the trust and openness you brought to this reading. ✦`;
   }
@@ -881,6 +929,7 @@ This must read as ONE coherent professional consultation — not five separate s
       lines.push("");
     });
     lines.push("═".repeat(58));lines.push("FINAL READING SUMMARY");lines.push("═".repeat(58));lines.push("");lines.push(summary||"");lines.push("");
+    if(directAns){lines.push("═".repeat(58));lines.push("DIRECT ANSWER TO YOUR QUESTION");lines.push("═".repeat(58));lines.push("");lines.push(`Q: ${session.question}`);lines.push("");lines.push(directAns);lines.push("");}
     lines.push("═".repeat(58));lines.push("CLOSING MESSAGE");lines.push("═".repeat(58));lines.push("");
     lines.push("You hold within you the wisdom, strength and agency to create the life you desire.");lines.push("The cards have illuminated your path — the next step is yours to take.");lines.push("Trust yourself. Trust the process. Trust the journey. ✦");lines.push("");lines.push(`Generated by Mystical 5-Deck Reading System · ${date}`);
     const blob=new Blob([lines.join("\n")],{type:"text/plain;charset=utf-8"});
@@ -933,6 +982,56 @@ This must read as ONE coherent professional consultation — not five separate s
         {loading?<Spin label="Generating your complete reading narrative"/>:
           <div style={{color:G.cream,fontSize:13,lineHeight:1.92,whiteSpace:"pre-wrap",fontStyle:"italic"}}>{summary}</div>}
       </Box>
+
+      {/* ── DIRECT ANSWER ── */}
+      <div style={{marginBottom:20,animation:"up .4s ease"}}>
+        <Lbl style={{marginBottom:12}}>✦ Direct Answer to Your Question</Lbl>
+        <div style={{
+          background:"linear-gradient(135deg,rgba(30,10,60,.95),rgba(10,3,25,.98))",
+          border:`2px solid ${G.gold}88`,
+          borderRadius:16,
+          padding:"20px 18px",
+          boxShadow:`0 8px 32px rgba(201,168,76,.15)`,
+          position:"relative",
+          overflow:"hidden",
+        }}>
+          {/* Decorative top bar */}
+          <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:`linear-gradient(90deg,transparent,${G.gold},transparent)`}}/>
+
+          {/* Question echo */}
+          <div style={{background:"rgba(201,168,76,.08)",border:"1px solid rgba(201,168,76,.2)",borderRadius:10,padding:"10px 13px",marginBottom:16}}>
+            <div style={{color:G.muted,fontSize:10,fontWeight:700,letterSpacing:1.5,textTransform:"uppercase",marginBottom:4}}>Your Question</div>
+            <div style={{color:G.cream,fontSize:12,fontStyle:"italic",lineHeight:1.6}}>"{session.question}"</div>
+          </div>
+
+          {/* The direct answer */}
+          {loadingAns?(
+            <div style={{textAlign:"center",padding:"16px 0"}}>
+              <div style={{fontSize:24,animation:"spn 2s linear infinite",display:"inline-block",marginBottom:8}}>✦</div>
+              <div style={{color:G.gold,fontSize:13}}>Distilling the cards' direct answer...</div>
+            </div>
+          ):(
+            <div>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+                <div style={{width:32,height:32,borderRadius:"50%",background:`linear-gradient(135deg,${G.gold},${G.goldLt})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>💬</div>
+                <div style={{color:G.gold,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:"uppercase"}}>The Cards Say</div>
+              </div>
+              <p style={{
+                color:G.cream,
+                fontSize:15,
+                lineHeight:1.85,
+                margin:0,
+                fontFamily:"Georgia,serif",
+                borderLeft:`4px solid ${G.gold}`,
+                paddingLeft:16,
+              }}>{directAns}</p>
+            </div>
+          )}
+
+          {/* Decorative bottom bar */}
+          <div style={{position:"absolute",bottom:0,left:0,right:0,height:3,background:`linear-gradient(90deg,transparent,${G.gold},transparent)`}}/>
+        </div>
+      </div>
 
       {/* Professional closing */}
       <Box style={{marginBottom:22,background:"rgba(201,168,76,.05)",border:`1px solid ${G.gold}20`}}>
