@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 
 // ═══════════════════════════════════════════════════════════════
-// MYSTICAL 5-DECK READING SYSTEM v5
+// MYSTICAL 5-DECK READING SYSTEM v6
 // Section 3: Single-page accordion — all 5 decks on one scroll
+// Section 4 & per-deck: Direct Answer feature (plain-language answers)
 // Backend: /.netlify/functions/oracle (DeepSeek)
 // Setup: Add DEEPSEEK_KEY to Netlify → Environment variables
 // ═══════════════════════════════════════════════════════════════
@@ -100,7 +101,7 @@ const DECKS = [
 function makeSession() {
   const ds = {};
   DECKS.forEach(d => {
-    ds[d.id] = { status:"not_started", images:{}, names:{}, confidence:{}, interpretations:[], summary:"", completedAt:null };
+    ds[d.id] = { status:"not_started", images:{}, names:{}, confidence:{}, interpretations:[], summary:"", directAnswer:"", completedAt:null };
   });
   return { id:Date.now().toString(), lifeAreas:[], question:"", ds, summary:"", createdAt:new Date().toISOString() };
 }
@@ -293,7 +294,7 @@ function CardResult({cd,meta,deckLight,deckColor,idx}) {
 async function callOracle(deck,lifeAreas,question,names) {
   const areaLabels=lifeAreas.map(id=>LIFE_AREAS.find(a=>a.id===id)?.label||id).join(", ");
   const cardLines=deck.cards.map(c=>{const n=(names[c.id]||"").trim();return `Card ${c.n} (${c.role}):\n  Name: ${n?`"${n}"`:"[not provided — suggest appropriate card]"}\n  Purpose: ${c.desc}`;}).join("\n\n");
-  const prompt=`You are a professional mystical card reader.\n\nDeck: ${deck.name} — ${deck.purpose}\nLife Area(s): ${areaLabels}\nClient Question: "${question}"\nDeck Purpose: ${deck.desc}\n\nCards:\n${cardLines}\n\nRules:\n- Use EXACT card name given. Never rename.\n- If missing, suggest appropriate card.\n- Interpret SPECIFICALLY for: "${question}" — never generic.\n- Be compassionate, empowering, personal.\n- If card name is invalid set error:true.\n\nReturn ONLY raw JSON, no markdown:\n{"cards":[{"cardName":"name","keywords":["k1","k2","k3","k4"],"meaning":"2-3 sentences specific to the question. Reference card name. Be personal.","error":false,"errorReason":""}],"suggestedAnswer":"3-4 paragraphs weaving ALL card names into one unified answer. Name every card. Open with key insight. Close with one empowering action."}`;
+  const prompt=`You are a professional mystical card reader.\n\nDeck: ${deck.name} — ${deck.purpose}\nLife Area(s): ${areaLabels}\nClient Question: "${question}"\nDeck Purpose: ${deck.desc}\n\nCards:\n${cardLines}\n\nRules:\n- Use EXACT card name given. Never rename.\n- If missing, suggest appropriate card.\n- Interpret SPECIFICALLY for: "${question}" — never generic.\n- Be compassionate, empowering, personal.\n- If card name is invalid set error:true.\n\nReturn ONLY raw JSON, no markdown:\n{"cards":[{"cardName":"name","keywords":["k1","k2","k3","k4"],"meaning":"2-3 sentences specific to the question. Reference card name. Be personal.","error":false,"errorReason":""}],"suggestedAnswer":"3-4 paragraphs weaving ALL card names into one unified answer. Name every card. Open with key insight. Close with one empowering action.","directAnswer":"A direct, plain-language answer (2-4 sentences, max 70 words) to the specific question: '${deck.purpose} \u2014 ${deck.subtitle}?' for this client. State clearly and concretely what is happening / what the root cause is / what influences exist / what should be done / what the likely outcome is (matching this deck's purpose). Reference the card names. No hedging, no vague language."}`;
   const res=await fetch(ORACLE_ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt})});
   const raw=await res.text().catch(()=>"");
   if(raw.trim().startsWith("<")) throw new Error("FUNC_NOT_FOUND");
@@ -330,7 +331,8 @@ function DeckPanel({deck, deckState, lifeAreas, question, isOpen, isLocked, onTo
   const [names,   setNames]   = useState(saved.names||{});
   const [conf,    setConf]    = useState(saved.confidence||{});
   const [cards,   setCards]   = useState(saved.interpretations?.length>0?saved.interpretations:null);
-  const [answer,  setAnswer]  = useState(saved.summary||"");
+  const [answer,    setAnswer]    = useState(saved.summary||"");
+  const [directAns, setDirectAns] = useState(saved.directAnswer||"");
   const [loading, setLoading] = useState(false);
   const [errMsg,  setErrMsg]  = useState("");
   const [confrm,  setConfrm]  = useState(false);
@@ -350,17 +352,17 @@ function DeckPanel({deck, deckState, lifeAreas, question, isOpen, isLocked, onTo
   // Autosave state
   useEffect(()=>{
     if(namedN>0||imgN>0||cards) {
-      onSave(deck.id,{images:{},names,confidence:conf,interpretations:cards||[],summary:answer,status:canDone?"completed":namedN>0||imgN>0?"in_progress":"not_started"});
+      onSave(deck.id,{images:{},names,confidence:conf,interpretations:cards||[],summary:answer,directAnswer:directAns,status:canDone?"completed":namedN>0||imgN>0?"in_progress":"not_started"});
     }
-  },[names,conf,cards,answer]);
+  },[names,conf,cards,answer,directAns]);
 
   async function read(demo=false) {
     setLoading(true); setErrMsg("");
     try {
       const r=await callOracle(deck,lifeAreas,question,demo?{}:names);
       if(!r?.cards) throw new Error("Empty oracle response");
-      setCards(r.cards); setAnswer(r.suggestedAnswer||"");
-      onSave(deck.id,{images:{},names,confidence:conf,interpretations:r.cards,summary:r.suggestedAnswer||"",status:"completed",completedAt:new Date().toISOString()});
+      setCards(r.cards); setAnswer(r.suggestedAnswer||""); setDirectAns(r.directAnswer||"");
+      onSave(deck.id,{images:{},names,confidence:conf,interpretations:r.cards,summary:r.suggestedAnswer||"",directAnswer:r.directAnswer||"",status:"completed",completedAt:new Date().toISOString()});
     } catch(e) {
       setErrMsg(fmtErr(e.message||""));
     }
@@ -368,11 +370,11 @@ function DeckPanel({deck, deckState, lifeAreas, question, isOpen, isLocked, onTo
   }
 
   function doReset() {
-    setImages({}); setNames({}); setConf({}); setCards(null); setAnswer("");
+    setImages({}); setNames({}); setConf({}); setCards(null); setAnswer(""); setDirectAns("");
     setConfrm(false); setErrMsg("");
     setResetOk("✓ Deck reset — re-upload your card photos.");
     Store.saveImg(deck.id,{});
-    onSave(deck.id,{images:{},names:{},confidence:{},interpretations:[],summary:"",status:"reset",completedAt:null});
+    onSave(deck.id,{images:{},names:{},confidence:{},interpretations:[],summary:"",directAnswer:"",status:"reset",completedAt:null});
     setTimeout(()=>setResetOk(""),3000);
   }
 
@@ -520,6 +522,40 @@ function DeckPanel({deck, deckState, lifeAreas, question, isOpen, isLocked, onTo
                     </div>
                     <div style={{width:"100%",height:1,background:`linear-gradient(90deg,transparent,${deck.light}50,transparent)`,marginBottom:12}}/>
                     {answer.split(/\n+/).filter(p=>p.trim()).map((p,i,a)=><p key={i} style={{color:G.cream,fontSize:13,lineHeight:1.88,margin:i>0?"11px 0 0":"0",fontStyle:i===a.length-1?"italic":"normal",opacity:i===a.length-1?.84:.94}}>{p}</p>)}
+                  </div>
+                </div>
+              )}
+
+              {/* Direct Answer — specific to this deck's purpose */}
+              {allOk&&directAns&&directAns.length>5&&(
+                <div style={{marginBottom:14,animation:"up .4s ease both"}}>
+                  <Lbl mb={10}>✦ Direct Answer</Lbl>
+                  <div style={{
+                    background:"linear-gradient(135deg,rgba(30,10,60,.95),rgba(10,3,25,.98))",
+                    border:`2px solid ${deck.light}88`,
+                    borderRadius:14,
+                    padding:"16px 16px",
+                    boxShadow:`0 6px 24px ${deck.color}55`,
+                    position:"relative",
+                    overflow:"hidden",
+                  }}>
+                    <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:`linear-gradient(90deg,transparent,${deck.light},transparent)`}}/>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                      <div style={{width:28,height:28,borderRadius:"50%",background:`linear-gradient(135deg,${deck.light},${deck.color})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,flexShrink:0}}>💬</div>
+                      <div>
+                        <div style={{color:deck.light,fontSize:10,fontWeight:700,letterSpacing:1.5,textTransform:"uppercase"}}>Answer to: {deck.purpose}</div>
+                        <div style={{color:G.muted,fontSize:9.5}}>{deck.subtitle}</div>
+                      </div>
+                    </div>
+                    <p style={{
+                      color:G.cream,
+                      fontSize:14,
+                      lineHeight:1.8,
+                      margin:"10px 0 0",
+                      fontFamily:"Georgia,serif",
+                      borderLeft:`4px solid ${deck.light}`,
+                      paddingLeft:14,
+                    }}>{directAns}</p>
                   </div>
                 </div>
               )}
@@ -925,6 +961,7 @@ This must read as ONE coherent professional consultation — not five separate s
       if(ds?.interpretations?.length){
         ds.interpretations.forEach((c,i)=>{lines.push(`\nCard ${d.cards[i]?.n} — ${d.cards[i]?.role}`);if(c.error){lines.push("[Could not be read]");return;}lines.push(`Name: ${c.cardName}`);if(c.keywords?.length)lines.push(`Keywords: ${c.keywords.join(", ")}`);lines.push(`Interpretation: ${c.meaning}`);});
         if(ds.summary){lines.push("\nSUGGESTED ANSWER");lines.push(ds.summary);}
+        if(ds.directAnswer){lines.push(`\nDIRECT ANSWER (${d.purpose} - ${d.subtitle})`);lines.push(ds.directAnswer);}
       }else{lines.push("[Not completed]");}
       lines.push("");
     });
